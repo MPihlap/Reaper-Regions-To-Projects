@@ -1,11 +1,10 @@
 import reapy
 from reapy import reascript_api as RPR
 import os
-#from sws_python import *
+import time
+import logging
 
-def create_subprojects_from_regions():
-    # Ensure REAPER is running and accessible
-    #reapy.config.reaper_python_library = 'C:/path/to/your/reaper_python.dll'  # Update this path accordingly
+def create_projects_from_regions():
 
     # Connect to the current REAPER project
     reapy.connect()
@@ -16,63 +15,48 @@ def create_subprojects_from_regions():
     # Get the total number of markers and regions
     num_markers_regions = RPR.CountProjectMarkers(project.id, 0, 0)
     num_markers_regions = num_markers_regions[-1] + num_markers_regions[-2]
-    #num_regions = RPR.CountProjectMarkers(project.id, 0, 1)[-1]
-
-    #print(num_markers, num_regions)
     
     # Loop through all markers and regions
     for i in range(num_markers_regions):
         #ret, is_region, pos, rgn_end, name, markrgnindex, color = RPR.EnumProjectMarkers3(project.id, i, 0, 0, 0, 0, 0, 0)
         retval, proj, idx, is_region, pos, rgn_end, name, markrgnindex, colorOut = RPR.EnumProjectMarkers3(project.id, i, 0, 0, 0, 0, 0, 0)
-        #print(project.markers)
-        #print(retval, proj, idx, is_region, pos, rgn_end, name, markrgnindex, colorOut)
+        logging.debug(retval, proj, idx, is_region, pos, rgn_end, name, markrgnindex, colorOut)
         
-        fs = RPR.SNM_CreateFastString("")
-        name = RPR.SNM_GetProjectMarkerName(proj, idx, is_region, fs)
-        print(name)
-        name = RPR.SNM_GetFastString(fs)
-        #print(fs)
-        print(name)
         if is_region:
+            # EnumProjectMarkers3 fails to return name, SWS workaround needed.
+            fs = RPR.SNM_CreateFastString("")
+            name = RPR.SNM_GetProjectMarkerName(proj, markrgnindex, is_region, fs)
+            name = RPR.SNM_GetFastString(fs)
+            RPR.SNM_DeleteFastString(fs)
             # Enum name is always 0, workaround needed.
             region_name = f"{markrgnindex}_{name}_{project_name}" if name else f"{markrgnindex}_{project_name}"
-            RPR.SNM_DeleteFastString(fs)
-            #reapy.print(region_name)
-            #continue
-            # Set the time selection to the region
-            project.time_selection = (pos, rgn_end)
-            
-            # Copy items in the time selection to a new project
-            project.select_all_items()
-            # Select all tracks in the project
-            RPR.Main_OnCommand(40296, 0)  # Select all tracks
-
-            RPR.Main_OnCommand(40060, 0)  # Copy items
-            
+            logging.debug(region_name)
+            # Save the subproject
+            logging.debug(project.path)
+            project_path = project.path
+            # For some reason reapy reports the media folder (if setup) as the project path. Recurse back to the project folder.
+            while not os.path.exists(f"{project_path}/{project.name}"):
+                project_path = os.path.dirname(project.path)
+                logging.debug(project_path)
+            subproject_path = f"{project_path}/{region_name}.rpp"
+            logging.debug(subproject_path)
+            RPR.Main_SaveProjectEx(project.id, subproject_path, 0)
             # Create a new project tab for the subproject
             RPR.Main_OnCommand(40859, 0)  # New project tab
-            
+            RPR.Main_openProject(f"noprompt:{subproject_path}")
             # Get the new project
             subproject = reapy.Project()
+            # Set the time selection to the region
+            subproject.time_selection = (pos, rgn_end)
+            # Wait until the project is fully loaded
+            while not project.has_valid_id:
+                time.sleep(0.1)  # Wait 100 ms and check again
+            RPR.Main_OnCommand(40049, 0)  # Crop to time selection
+            RPR.SetEditCurPos(0, True, False) # Set cursor to start of project
+            subproject.save()
             
-            # Paste items in the new project tab
-            RPR.Main_OnCommand(40058, 0)  # Paste items
-            
-            # Save the subproject
-            subproject_path = f"{project.path}/{region_name}.rpp"
-            print(subproject_path)
-            RPR.Main_SaveProjectEx(subproject.id, subproject_path, 0)
-            RPR.Main_openProject(f"noprompt:{subproject_path}")
-            #subproject.save(f"{region_name}.rpp")
-            
-            # Close the subproject tab
-            #RPR.Main_OnCommand(40861, 0)  # Close project tab
-            # Switch back to the original project using its ID
             RPR.SelectProjectInstance(original_project_id)
-        
 
-    # Disconnect from REAPER
-    #reapy.disconnect()
-
-# Run the function
-create_subprojects_from_regions()
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    create_projects_from_regions()
