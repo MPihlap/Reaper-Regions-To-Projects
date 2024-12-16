@@ -79,6 +79,9 @@ def create_projects_from_regions():
     original_project_id = project.id
     project_name = project.name.split(".")[0]
 
+    # Deselect all tracks at the start
+    RPR.Main_OnCommand(40297, 0)  # Unselect all tracks
+
     # Get total number of markers and regions
     retvals = RPR.CountProjectMarkers(project.id, 0, 0)
     num_markers = retvals[2]
@@ -141,8 +144,10 @@ def create_projects_from_regions():
                 bus_track = project.add_track(name="Subproject Bus")
                 bus_created = True
 
-            # Insert the subproject onto the Subproject Bus track
-            bus_track.select()
+            # Make sure no other tracks are selected
+            RPR.Main_OnCommand(40297, 0)  # Unselect all tracks
+            RPR.SetOnlyTrackSelected(bus_track.id)  # Select only the bus track
+
             project.cursor_position = pos
             items_before = len(bus_track.items)
             RPR.InsertMedia(subproject_path, 0)
@@ -155,7 +160,7 @@ def create_projects_from_regions():
             remove_items_in_region_except_bus(project, bus_track, pos, rgn_end)
 
             # Remove the exit() if you want to process all regions
-            #exit()
+            # exit()
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
